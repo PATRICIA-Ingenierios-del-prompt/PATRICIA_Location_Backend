@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
 @AllArgsConstructor
 public class LiveLocationRedisAdapter implements LiveLocationStoreOutPort {
     private static final String EVENT_KEY_PREFIX = "loc:event:";
+    private static final String ROSTER_KEY_PREFIX = "loc:roster:";
     private static final String ACTIVE_EVENTS_KEY = "loc:active-events";
 
     private final StringRedisTemplate redis;
@@ -68,7 +69,17 @@ public class LiveLocationRedisAdapter implements LiveLocationStoreOutPort {
     @Override
     public void clearEvent(UUID eventId) {
         redis.delete(eventKey(eventId));
+        redis.delete(rosterKey(eventId));
         redis.opsForSet().remove(ACTIVE_EVENTS_KEY, eventId.toString());
+    }
+
+    @Override
+    public void registerEvent(UUID eventId, Set<UUID> participants) {
+        if (participants == null || participants.isEmpty()) {
+            return;
+        }
+        String[] ids = participants.stream().map(UUID::toString).toArray(String[]::new);
+        redis.opsForSet().add(rosterKey(eventId), ids);
     }
 
     private boolean removeFromActive(String id) {
@@ -83,6 +94,10 @@ public class LiveLocationRedisAdapter implements LiveLocationStoreOutPort {
 
     private String eventKey(UUID eventId) {
         return EVENT_KEY_PREFIX + eventId;
+    }
+
+    private String rosterKey(UUID eventId) {
+        return ROSTER_KEY_PREFIX + eventId;
     }
 
     @Data

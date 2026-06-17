@@ -7,9 +7,11 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+
 public interface LiveLocationStoreOutPort {
     void save(LiveLocation location, Duration ttl);
     List<LiveLocation> snapshot(UUID eventId);
     Set<UUID> activeEventIds();
     void clearEvent(UUID eventId);
+    void registerEvent(UUID eventId, Set<UUID> participants);
 }
