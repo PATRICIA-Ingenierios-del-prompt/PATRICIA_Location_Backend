@@ -1,9 +1,10 @@
 package ingprompt.patricia.location.application.service;
 
-import ingprompt.patricia.location.application.port.in.IncidentLocationCase;
 import ingprompt.patricia.location.application.port.in.LocationMaintenanceCase;
 import ingprompt.patricia.location.application.port.in.TrackLocationCase;
+import ingprompt.patricia.location.application.port.in.TrackingLifecycleCase;
 import ingprompt.patricia.location.application.port.out.LiveLocationStoreOutPort;
+import ingprompt.patricia.location.application.port.out.LocationEventPublisherOut;
 import ingprompt.patricia.location.application.port.out.StoredLocationRepositoryOutPort;
 import ingprompt.patricia.location.domain.model.GeoPoint;
 import ingprompt.patricia.location.domain.model.LiveLocation;
@@ -15,19 +16,27 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
 @Service
-public class LocationTrackingService implements TrackLocationCase, LocationMaintenanceCase, IncidentLocationCase {
+public class LocationTrackingService implements TrackLocationCase, LocationMaintenanceCase, TrackingLifecycleCase {
+
     private final LiveLocationStoreOutPort liveStore;
     private final StoredLocationRepositoryOutPort storedRepository;
+    private final LocationEventPublisherOut eventPublisher;
     private final Duration liveTtl;
     private final Duration routineRetention;
 
-    public LocationTrackingService(LiveLocationStoreOutPort liveStore, StoredLocationRepositoryOutPort storedRepository, @Value("${location.live.ttl-seconds}") long liveTtlSeconds, @Value("${location.storage.routine-ttl-hours}") long routineTtlHours) {
+    public LocationTrackingService(LiveLocationStoreOutPort liveStore,
+                                   StoredLocationRepositoryOutPort storedRepository,
+                                   LocationEventPublisherOut eventPublisher,
+                                   @Value("${location.live.ttl-seconds}") long liveTtlSeconds,
+                                   @Value("${location.storage.routine-ttl-hours}") long routineTtlHours) {
         this.liveStore = liveStore;
         this.storedRepository = storedRepository;
+        this.eventPublisher = eventPublisher;
         this.liveTtl = Duration.ofSeconds(liveTtlSeconds);
         this.routineRetention = Duration.ofHours(routineTtlHours);
     }
@@ -46,13 +55,7 @@ public class LocationTrackingService implements TrackLocationCase, LocationMaint
     @Override
     public void flushLiveToStorage() {
         for (UUID eventId : liveStore.activeEventIds()) {
-            List<StoredLocation> batch = liveStore.snapshot(eventId).stream()
-                    .map(live -> StoredLocation.routineFlush(live, routineRetention))
-                    .toList();
-            if (!batch.isEmpty()) {
-                storedRepository.saveAll(batch); // adapter encrypts
-                log.info("Flushed {} routine locations for event {}", batch.size(), eventId);
-            }
+            flushEvent(eventId);
         }
     }
 
@@ -65,21 +68,36 @@ public class LocationTrackingService implements TrackLocationCase, LocationMaint
     }
 
     @Override
-    public void captureIncidentSnapshot(UUID eventId, UUID reportId) {
-        List<StoredLocation> evidence = liveStore.snapshot(eventId).stream()
-                .map(live -> StoredLocation.incident(live, reportId))
-                .toList();
-        if (evidence.isEmpty()) {
-            log.warn("Incident {} on event {} captured no live positions (nobody currently tracked)", reportId, eventId);
-            return;
-        }
-        storedRepository.saveAll(evidence); // adapter encrypts; permanent (no TTL)
-        log.info("Persisted {} permanent incident locations for event {} (report {})", evidence.size(), eventId, reportId);
+    public void startTracking(UUID eventId, Set<UUID> participants) {
+        liveStore.registerEvent(eventId, participants);
+        log.info("Started tracking event {} with {} participants", eventId, participants == null ? 0 : participants.size());
     }
 
     @Override
     public void stopTracking(UUID eventId) {
+        flushEvent(eventId);
         liveStore.clearEvent(eventId);
-        log.info("Stopped tracking event {} — live data cleared", eventId);
+        log.info("Stopped tracking event {} — final snapshot flushed and live data cleared", eventId);
+    }
+
+    @Override
+    public void captureIncidentSnapshot(UUID eventId, UUID reportId) {
+        List<LiveLocation> snapshot = liveStore.snapshot(eventId);
+        if (snapshot.isEmpty()) {
+            log.warn("Incident {} on event {} captured no live positions (nobody currently tracked)", reportId, eventId);
+            return;
+        }
+        storedRepository.saveAll(snapshot.stream().map(live -> StoredLocation.incident(live, reportId)).toList());
+        eventPublisher.publishIncidentSnapshot(eventId, reportId, snapshot);
+        log.info("Persisted and published {} incident locations for event {} (report {})",
+                snapshot.size(), eventId, reportId);
+    }
+
+    private void flushEvent(UUID eventId) {
+        List<StoredLocation> batch = liveStore.snapshot(eventId).stream().map(live -> StoredLocation.routineFlush(live, routineRetention)).toList();
+        if (!batch.isEmpty()) {
+            storedRepository.saveAll(batch); // adapter encrypts
+            log.info("Flushed {} routine locations for event {}", batch.size(), eventId);
+        }
     }
 }
