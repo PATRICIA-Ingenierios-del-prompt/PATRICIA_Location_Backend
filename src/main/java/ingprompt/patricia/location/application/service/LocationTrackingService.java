@@ -4,7 +4,6 @@ import ingprompt.patricia.location.application.port.in.LocationMaintenanceCase;
 import ingprompt.patricia.location.application.port.in.TrackLocationCase;
 import ingprompt.patricia.location.application.port.in.TrackingLifecycleCase;
 import ingprompt.patricia.location.application.port.out.LiveLocationStoreOutPort;
-import ingprompt.patricia.location.application.port.out.LocationEventPublisherOut;
 import ingprompt.patricia.location.application.port.out.StoredLocationRepositoryOutPort;
 import ingprompt.patricia.location.domain.model.GeoPoint;
 import ingprompt.patricia.location.domain.model.LiveLocation;
@@ -25,18 +24,12 @@ public class LocationTrackingService implements TrackLocationCase, LocationMaint
 
     private final LiveLocationStoreOutPort liveStore;
     private final StoredLocationRepositoryOutPort storedRepository;
-    private final LocationEventPublisherOut eventPublisher;
     private final Duration liveTtl;
     private final Duration routineRetention;
 
-    public LocationTrackingService(LiveLocationStoreOutPort liveStore,
-                                   StoredLocationRepositoryOutPort storedRepository,
-                                   LocationEventPublisherOut eventPublisher,
-                                   @Value("${location.live.ttl-seconds}") long liveTtlSeconds,
-                                   @Value("${location.storage.routine-ttl-hours}") long routineTtlHours) {
+    public LocationTrackingService(LiveLocationStoreOutPort liveStore, StoredLocationRepositoryOutPort storedRepository, @Value("${location.live.ttl-seconds}") long liveTtlSeconds, @Value("${location.storage.routine-ttl-hours}") long routineTtlHours) {
         this.liveStore = liveStore;
         this.storedRepository = storedRepository;
-        this.eventPublisher = eventPublisher;
         this.liveTtl = Duration.ofSeconds(liveTtlSeconds);
         this.routineRetention = Duration.ofHours(routineTtlHours);
     }
@@ -87,9 +80,9 @@ public class LocationTrackingService implements TrackLocationCase, LocationMaint
             log.warn("Incident {} on event {} captured no live positions (nobody currently tracked)", reportId, eventId);
             return;
         }
+        // Permanent, encrypted evidence in the DB, keyed by reportId.
         storedRepository.saveAll(snapshot.stream().map(live -> StoredLocation.incident(live, reportId)).toList());
-        eventPublisher.publishIncidentSnapshot(eventId, reportId, snapshot);
-        log.info("Persisted and published {} incident locations for event {} (report {})",
+        log.info("Persisted {} permanent incident locations for event {} (report {})",
                 snapshot.size(), eventId, reportId);
     }
 
