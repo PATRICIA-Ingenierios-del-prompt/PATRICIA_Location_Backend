@@ -1,0 +1,92 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: location-postgres
+    environment:
+      POSTGRES_DB: location_db
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: rootpassword
+    ports:
+      # Host 5434 to avoid clashing with Parches (5432) and Events (5433).
+      - "5434:5432"
+    volumes:
+      - location_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d location_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - location-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: location-redis
+    ports:
+      # Host 6380 to avoid clashing with the Parches Redis (6379).
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - location-net
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: location-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      # Host ports shifted (+2) to avoid clashing with Parches (5672/15672) and Events (5673/15673).
+      # IMPORTANT: this is an *isolated* broker — no messages cross to the other stacks.
+      # For real cross-MS integration, attach all apps to a shared external network and
+      # point them at a single RabbitMQ via RABBITMQ_HOST (the Option-B setup we used).
+      - "5674:5672"      # AMQP
+      - "15674:15672"    # Management UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - location-net
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: location-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/location_db
+      SPRING_DATASOURCE_USERNAME: admin
+      SPRING_DATASOURCE_PASSWORD: rootpassword
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      JPA_SHOW_SQL: "false"
+      # Override the dev key in real deployments (KMS/Vault-managed 256-bit secret).
+      LOCATION_ENCRYPTION_SECRET: dev-only-change-me-in-production
+    ports:
+      - "8089:8089"
+    networks:
+      - location-net
+
+networks:
+  location-net:
+    driver: bridge
+
+volumes:
+  location_postgres_data:
