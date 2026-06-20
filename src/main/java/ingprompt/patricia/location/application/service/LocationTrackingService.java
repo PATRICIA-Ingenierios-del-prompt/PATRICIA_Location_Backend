@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 
 @Slf4j
 @Service
@@ -75,22 +76,27 @@ public class LocationTrackingService implements TrackLocationCase, LocationMaint
 
     @Override
     public void captureIncidentSnapshot(UUID eventId, UUID reportId) {
-        List<LiveLocation> snapshot = liveStore.snapshot(eventId);
-        if (snapshot.isEmpty()) {
+        int count = persistSnapshot(eventId, live -> StoredLocation.incident(live, reportId));
+        if (count == 0) {
             log.warn("Incident {} on event {} captured no live positions (nobody currently tracked)", reportId, eventId);
-            return;
+        } else {
+            log.info("Persisted {} permanent incident locations for event {} (report {})",
+                    count, eventId, reportId);
         }
-        // Permanent, encrypted evidence in the DB, keyed by reportId.
-        storedRepository.saveAll(snapshot.stream().map(live -> StoredLocation.incident(live, reportId)).toList());
-        log.info("Persisted {} permanent incident locations for event {} (report {})",
-                snapshot.size(), eventId, reportId);
     }
 
     private void flushEvent(UUID eventId) {
-        List<StoredLocation> batch = liveStore.snapshot(eventId).stream().map(live -> StoredLocation.routineFlush(live, routineRetention)).toList();
-        if (!batch.isEmpty()) {
-            storedRepository.saveAll(batch); // adapter encrypts
-            log.info("Flushed {} routine locations for event {}", batch.size(), eventId);
+        int count = persistSnapshot(eventId, live -> StoredLocation.routineFlush(live, routineRetention));
+        if (count > 0) {
+            log.info("Flushed {} routine locations for event {}", count, eventId);
         }
+    }
+
+    private int persistSnapshot(UUID eventId, Function<LiveLocation, StoredLocation> mapper) {
+        List<StoredLocation> batch = liveStore.snapshot(eventId).stream().map(mapper).toList();
+        if (!batch.isEmpty()) {
+            storedRepository.saveAll(batch);
+        }
+        return batch.size();
     }
 }

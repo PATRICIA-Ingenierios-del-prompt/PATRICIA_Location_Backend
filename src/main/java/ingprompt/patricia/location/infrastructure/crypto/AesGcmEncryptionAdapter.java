@@ -40,37 +40,36 @@ public class AesGcmEncryptionAdapter implements EncryptionPort {
 
     @Override
     public String encrypt(String plaintext) {
-        try {
-            byte[] iv = new byte[IV_LENGTH];
-            secureRandom.nextBytes(iv);
+        byte[] iv = new byte[IV_LENGTH];
+        secureRandom.nextBytes(iv);
 
-            Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-            cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(TAG_LENGTH_BITS, iv));
-            byte[] ciphertext = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
+        byte[] ciphertext = doCipher(Cipher.ENCRYPT_MODE, iv, plaintext.getBytes(StandardCharsets.UTF_8));
 
-            byte[] out = new byte[iv.length + ciphertext.length];
-            System.arraycopy(iv, 0, out, 0, iv.length);
-            System.arraycopy(ciphertext, 0, out, iv.length, ciphertext.length);
-            return Base64.getEncoder().encodeToString(out);
-        } catch (Exception e) {
-            throw new LocationEncryptionException("Encryption failed", e);
-        }
+        byte[] out = new byte[iv.length + ciphertext.length];
+        System.arraycopy(iv, 0, out, 0, iv.length);
+        System.arraycopy(ciphertext, 0, out, iv.length, ciphertext.length);
+        return Base64.getEncoder().encodeToString(out);
     }
 
     @Override
     public String decrypt(String ciphertext) {
-        try {
-            byte[] all = Base64.getDecoder().decode(ciphertext);
-            byte[] iv = new byte[IV_LENGTH];
-            byte[] body = new byte[all.length - IV_LENGTH];
-            System.arraycopy(all, 0, iv, 0, IV_LENGTH);
-            System.arraycopy(all, IV_LENGTH, body, 0, body.length);
+        byte[] all = Base64.getDecoder().decode(ciphertext);
+        byte[] iv = new byte[IV_LENGTH];
+        byte[] body = new byte[all.length - IV_LENGTH];
+        System.arraycopy(all, 0, iv, 0, IV_LENGTH);
+        System.arraycopy(all, IV_LENGTH, body, 0, body.length);
 
+        return new String(doCipher(Cipher.DECRYPT_MODE, iv, body), StandardCharsets.UTF_8);
+    }
+
+    private byte[] doCipher(int mode, byte[] iv, byte[] input) {
+        try {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-            cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(TAG_LENGTH_BITS, iv));
-            return new String(cipher.doFinal(body), StandardCharsets.UTF_8);
+            cipher.init(mode, key, new GCMParameterSpec(TAG_LENGTH_BITS, iv));
+            return cipher.doFinal(input);
         } catch (Exception e) {
-            throw new LocationEncryptionException("Decryption failed", e);
+            String label = (mode == Cipher.ENCRYPT_MODE) ? "Encryption" : "Decryption";
+            throw new LocationEncryptionException(label + " failed", e);
         }
     }
 }

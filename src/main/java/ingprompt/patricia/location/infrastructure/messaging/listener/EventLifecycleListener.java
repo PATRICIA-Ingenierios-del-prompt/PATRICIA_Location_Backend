@@ -2,6 +2,7 @@ package ingprompt.patricia.location.infrastructure.messaging.listener;
 
 import ingprompt.patricia.location.application.port.in.TrackingLifecycleCase;
 import ingprompt.patricia.location.infrastructure.messaging.config.RabbitMQConfig;
+import ingprompt.patricia.location.infrastructure.messaging.event.BaseEvent;
 import ingprompt.patricia.location.infrastructure.messaging.event.EventEndedEvent;
 import ingprompt.patricia.location.infrastructure.messaging.event.EventStartedEvent;
 import ingprompt.patricia.location.infrastructure.messaging.event.IncidentReportedEvent;
@@ -18,19 +19,24 @@ public class EventLifecycleListener {
 
     @RabbitListener(queues = RabbitMQConfig.EVENT_STARTED_QUEUE)
     public void onEventStarted(EventStartedEvent event) {
-        log.info("event.started received for {}", event.getEventId());
-        lifecycleCase.startTracking(event.getEventId(), event.getParticipants());
+        handle("event.started", event,
+                () -> lifecycleCase.startTracking(event.getEventId(), event.getParticipants()));
     }
 
     @RabbitListener(queues = RabbitMQConfig.EVENT_ENDED_QUEUE)
     public void onEventEnded(EventEndedEvent event) {
-        log.info("event.ended received for {}", event.getEventId());
-        lifecycleCase.stopTracking(event.getEventId());
+        handle("event.ended", event,
+                () -> lifecycleCase.stopTracking(event.getEventId()));
     }
 
     @RabbitListener(queues = RabbitMQConfig.EVENT_INCIDENT_QUEUE)
     public void onIncidentReported(IncidentReportedEvent event) {
-        log.info("event.incident.reported received: report {} on event {}", event.getReportId(), event.getEventId());
-        lifecycleCase.captureIncidentSnapshot(event.getEventId(), event.getReportId());
+        handle("event.incident.reported", event,
+                () -> lifecycleCase.captureIncidentSnapshot(event.getEventId(), event.getReportId()));
+    }
+
+    private void handle(String label, BaseEvent event, Runnable action) {
+        log.info("{} received for event {}", label, event.getEventId());
+        action.run();
     }
 }
