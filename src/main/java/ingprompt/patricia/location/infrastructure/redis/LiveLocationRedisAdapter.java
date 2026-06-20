@@ -1,13 +1,15 @@
 package ingprompt.patricia.location.infrastructure.redis;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import ingprompt.patricia.location.application.port.out.LiveLocationStoreOutPort;
+import ingprompt.patricia.location.domain.exception.LocationSerializationException;
 import ingprompt.patricia.location.domain.model.GeoPoint;
 import ingprompt.patricia.location.domain.model.LiveLocation;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -21,6 +23,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 
+@Slf4j
 @Component
 @AllArgsConstructor
 public class LiveLocationRedisAdapter implements LiveLocationStoreOutPort {
@@ -32,10 +35,15 @@ public class LiveLocationRedisAdapter implements LiveLocationStoreOutPort {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
-    @SneakyThrows
     public void save(LiveLocation location, Duration ttl) {
         String key = eventKey(location.eventId());
-        String json = objectMapper.writeValueAsString(new PositionValue(location.point().latitude(), location.point().longitude(), location.recordedAt().toEpochMilli()));
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(new PositionValue(location.point().latitude(), location.point().longitude(), location.recordedAt().toEpochMilli()));
+        } catch (JsonProcessingException e) {
+            throw new LocationSerializationException(
+                    "Failed to serialize live location for user " + location.userId() + " in event " + location.eventId(), e);
+        }
         redis.opsForHash().put(key, location.userId().toString(), json);
         redis.expire(key, ttl);
         redis.opsForSet().add(ACTIVE_EVENTS_KEY, location.eventId().toString());
@@ -87,9 +95,13 @@ public class LiveLocationRedisAdapter implements LiveLocationStoreOutPort {
         return false; // filtered out
     }
 
-    @SneakyThrows
     private PositionValue readValue(String json) {
-        return objectMapper.readValue(json, PositionValue.class);
+        try {
+            return objectMapper.readValue(json, PositionValue.class);
+        } catch (JsonProcessingException e) {
+            throw new LocationSerializationException(
+                    "Failed to deserialize live location from Redis: " + json, e);
+        }
     }
 
     private String eventKey(UUID eventId) {

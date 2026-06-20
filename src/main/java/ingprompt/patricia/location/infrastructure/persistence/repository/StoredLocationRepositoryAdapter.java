@@ -2,6 +2,7 @@ package ingprompt.patricia.location.infrastructure.persistence.repository;
 
 import ingprompt.patricia.location.application.port.out.EncryptionPort;
 import ingprompt.patricia.location.application.port.out.StoredLocationRepositoryOutPort;
+import ingprompt.patricia.location.domain.exception.LocationDataCorruptionException;
 import ingprompt.patricia.location.domain.model.GeoPoint;
 import ingprompt.patricia.location.domain.model.StoredLocation;
 import ingprompt.patricia.location.infrastructure.persistence.entity.StoredLocationEntity;
@@ -58,8 +59,16 @@ public class StoredLocationRepositoryAdapter implements StoredLocationRepository
     }
 
     private StoredLocation toDecryptedDomain(StoredLocationEntity entity) {
-        double lat = Double.parseDouble(encryption.decrypt(entity.getLatitudeCipher()));
-        double lng = Double.parseDouble(encryption.decrypt(entity.getLongitudeCipher()));
+        double lat;
+        double lng;
+        try {
+            lat = Double.parseDouble(encryption.decrypt(entity.getLatitudeCipher()));
+            lng = Double.parseDouble(encryption.decrypt(entity.getLongitudeCipher()));
+        } catch (NumberFormatException e) {
+            throw new LocationDataCorruptionException(
+                    "Decrypted coordinate is not a valid number for stored location " + entity.getId()
+                            + " in event " + entity.getEventId(), e);
+        }
         return StoredLocation.rehydrate(entity.getId(), entity.getEventId(), entity.getUserId(), new GeoPoint(lat, lng), entity.getRecordedAt(), entity.getExpiresAt(), entity.getReason(), entity.getReportId());
     }
 }

@@ -19,18 +19,34 @@ public class EventLifecycleListener {
     @RabbitListener(queues = RabbitMQConfig.EVENT_STARTED_QUEUE)
     public void onEventStarted(EventStartedEvent event) {
         log.info("event.started received for {}", event.getEventId());
-        lifecycleCase.startTracking(event.getEventId(), event.getParticipants());
+        try {
+            lifecycleCase.startTracking(event.getEventId(), event.getParticipants());
+        } catch (Exception e) {
+            log.error("Failed to start tracking for event {}: {}", event.getEventId(), e.getMessage(), e);
+            throw e;
+        }
     }
 
     @RabbitListener(queues = RabbitMQConfig.EVENT_ENDED_QUEUE)
     public void onEventEnded(EventEndedEvent event) {
         log.info("event.ended received for {}", event.getEventId());
-        lifecycleCase.stopTracking(event.getEventId());
+        try {
+            lifecycleCase.stopTracking(event.getEventId());
+        } catch (Exception e) {
+            log.error("Failed to stop tracking for event {}: {}", event.getEventId(), e.getMessage(), e);
+            throw e;
+        }
     }
 
     @RabbitListener(queues = RabbitMQConfig.EVENT_INCIDENT_QUEUE)
     public void onIncidentReported(IncidentReportedEvent event) {
         log.info("event.incident.reported received: report {} on event {}", event.getReportId(), event.getEventId());
-        lifecycleCase.captureIncidentSnapshot(event.getEventId(), event.getReportId());
+        try {
+            lifecycleCase.captureIncidentSnapshot(event.getEventId(), event.getReportId());
+        } catch (Exception e) {
+            log.error("Failed to capture incident snapshot for report {} on event {}: {}",
+                    event.getReportId(), event.getEventId(), e.getMessage(), e);
+            throw e;
+        }
     }
 }
