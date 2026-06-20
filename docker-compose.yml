@@ -77,8 +77,8 @@ services:
       RABBITMQ_USERNAME: guest
       RABBITMQ_PASSWORD: guest
       JPA_SHOW_SQL: "false"
-      # Override the dev key in real deployments (KMS/Vault-managed 256-bit secret).
-      LOCATION_ENCRYPTION_SECRET: dev-only-change-me-in-production
+      LOCATION_ENCRYPTION_SECRET: ${LOCATION_ENCRYPTION_SECRET:dev-only-change-me-in-production}
+      SPRINGDOC_ENABLED: "true"
     ports:
       - "8089:8089"
     networks:
