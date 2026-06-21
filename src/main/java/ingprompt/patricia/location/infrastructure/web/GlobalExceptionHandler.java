@@ -1,6 +1,7 @@
 package ingprompt.patricia.location.infrastructure.web;
 
 import ingprompt.patricia.location.domain.exception.UnauthorizedLocationAccessException;
+import ingprompt.patricia.location.domain.exception.UserNotRegisteredForEventException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -14,6 +15,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(UnauthorizedLocationAccessException.class)
     public ResponseEntity<Map<String, String>> handleForbidden(UnauthorizedLocationAccessException ex) {
         return error(HttpStatus.FORBIDDEN, ex.getMessage());
+    }
+
+    @ExceptionHandler(UserNotRegisteredForEventException.class)
+    public ResponseEntity<Map<String, String>> handleNotRegistered(UserNotRegisteredForEventException ex) {
+        return error(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

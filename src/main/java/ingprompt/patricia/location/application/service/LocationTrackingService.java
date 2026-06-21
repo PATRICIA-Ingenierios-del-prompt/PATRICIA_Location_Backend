@@ -5,6 +5,7 @@ import ingprompt.patricia.location.application.port.in.TrackLocationCase;
 import ingprompt.patricia.location.application.port.in.TrackingLifecycleCase;
 import ingprompt.patricia.location.application.port.out.LiveLocationStoreOutPort;
 import ingprompt.patricia.location.application.port.out.StoredLocationRepositoryOutPort;
+import ingprompt.patricia.location.domain.exception.UserNotRegisteredForEventException;
 import ingprompt.patricia.location.domain.model.GeoPoint;
 import ingprompt.patricia.location.domain.model.LiveLocation;
 import ingprompt.patricia.location.domain.model.StoredLocation;
@@ -15,13 +16,13 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
 @Service
 public class LocationTrackingService implements TrackLocationCase, LocationMaintenanceCase, TrackingLifecycleCase {
-
     private final LiveLocationStoreOutPort liveStore;
     private final StoredLocationRepositoryOutPort storedRepository;
     private final Duration liveTtl;
@@ -36,6 +37,9 @@ public class LocationTrackingService implements TrackLocationCase, LocationMaint
 
     @Override
     public void updateLiveLocation(UUID eventId, UUID userId, double latitude, double longitude) {
+        if (!liveStore.isRegistered(eventId, userId)) {
+            throw new UserNotRegisteredForEventException();
+        }
         GeoPoint point = new GeoPoint(latitude, longitude); // validates range
         liveStore.save(new LiveLocation(eventId, userId, point, Instant.now()), liveTtl);
     }
@@ -74,23 +78,21 @@ public class LocationTrackingService implements TrackLocationCase, LocationMaint
     }
 
     @Override
-    public void captureIncidentSnapshot(UUID eventId, UUID reportId) {
-        List<LiveLocation> snapshot = liveStore.snapshot(eventId);
-        if (snapshot.isEmpty()) {
-            log.warn("Incident {} on event {} captured no live positions (nobody currently tracked)", reportId, eventId);
+    public void captureIncidentSnapshot(UUID eventId, UUID reportId, UUID reporterId) {
+        Optional<LiveLocation> reporterLive = liveStore.findLive(eventId, reporterId);
+        if (reporterLive.isEmpty()) {
+            log.warn("Incident {} on event {}: reporter {} has no live position — no evidence persisted",
+                    reportId, eventId, reporterId);
             return;
         }
-        // Permanent, encrypted evidence in the DB, keyed by reportId.
-        storedRepository.saveAll(snapshot.stream().map(live -> StoredLocation.incident(live, reportId)).toList());
-        log.info("Persisted {} permanent incident locations for event {} (report {})",
-                snapshot.size(), eventId, reportId);
+        storedRepository.save(StoredLocation.incident(reporterLive.get(), reportId));
+        log.info("Persisted permanent incident location for reporter {} on event {} (report {})",
+                reporterId, eventId, reportId);
     }
 
     private void flushEvent(UUID eventId) {
-        List<StoredLocation> batch = liveStore.snapshot(eventId).stream().map(live -> StoredLocation.routineFlush(live, routineRetention)).toList();
-        if (!batch.isEmpty()) {
-            storedRepository.saveAll(batch); // adapter encrypts
-            log.info("Flushed {} routine locations for event {}", batch.size(), eventId);
+        for (LiveLocation live : liveStore.snapshot(eventId)) {
+            storedRepository.upsertRoutineLastKnown(StoredLocation.routineFlush(live, routineRetention));
         }
     }
 }

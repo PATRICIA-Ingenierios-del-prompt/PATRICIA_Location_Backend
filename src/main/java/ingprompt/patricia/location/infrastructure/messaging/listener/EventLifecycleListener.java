@@ -30,7 +30,7 @@ public class EventLifecycleListener {
 
     @RabbitListener(queues = RabbitMQConfig.EVENT_INCIDENT_QUEUE)
     public void onIncidentReported(IncidentReportedEvent event) {
-        log.info("event.incident.reported received: report {} on event {}", event.getReportId(), event.getEventId());
-        lifecycleCase.captureIncidentSnapshot(event.getEventId(), event.getReportId());
+        log.info("event.incident.reported received: report {} on event {} by reporter {}", event.getReportId(), event.getEventId(), event.getReporterId());
+        lifecycleCase.captureIncidentSnapshot(event.getEventId(), event.getReportId(), event.getReporterId());
     }
 }
