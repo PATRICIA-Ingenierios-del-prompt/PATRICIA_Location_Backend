@@ -1,9 +1,11 @@
 package ingprompt.patricia.location.application.service;
 
+import ingprompt.patricia.location.application.port.in.LiveStreamSubscriptionCase;
 import ingprompt.patricia.location.application.port.in.LocationMaintenanceCase;
 import ingprompt.patricia.location.application.port.in.TrackLocationCase;
 import ingprompt.patricia.location.application.port.in.TrackingLifecycleCase;
 import ingprompt.patricia.location.application.port.out.LiveLocationStoreOutPort;
+import ingprompt.patricia.location.application.port.out.LocationBroadcasterPort;
 import ingprompt.patricia.location.application.port.out.StoredLocationRepositoryOutPort;
 import ingprompt.patricia.location.domain.exception.UserNotRegisteredForEventException;
 import ingprompt.patricia.location.domain.model.GeoPoint;
@@ -22,15 +24,17 @@ import java.util.UUID;
 
 @Slf4j
 @Service
-public class LocationTrackingService implements TrackLocationCase, LocationMaintenanceCase, TrackingLifecycleCase {
+public class LocationTrackingService implements TrackLocationCase, LocationMaintenanceCase, TrackingLifecycleCase, LiveStreamSubscriptionCase {
     private final LiveLocationStoreOutPort liveStore;
     private final StoredLocationRepositoryOutPort storedRepository;
+    private final LocationBroadcasterPort broadcaster;
     private final Duration liveTtl;
     private final Duration routineRetention;
 
-    public LocationTrackingService(LiveLocationStoreOutPort liveStore, StoredLocationRepositoryOutPort storedRepository, @Value("${location.live.ttl-seconds}") long liveTtlSeconds, @Value("${location.storage.routine-ttl-hours}") long routineTtlHours) {
+    public LocationTrackingService(LiveLocationStoreOutPort liveStore, StoredLocationRepositoryOutPort storedRepository, LocationBroadcasterPort broadcaster, @Value("${location.live.ttl-seconds}") long liveTtlSeconds, @Value("${location.storage.routine-ttl-hours}") long routineTtlHours) {
         this.liveStore = liveStore;
         this.storedRepository = storedRepository;
+        this.broadcaster = broadcaster;
         this.liveTtl = Duration.ofSeconds(liveTtlSeconds);
         this.routineRetention = Duration.ofHours(routineTtlHours);
     }
@@ -41,7 +45,12 @@ public class LocationTrackingService implements TrackLocationCase, LocationMaint
             throw new UserNotRegisteredForEventException();
         }
         GeoPoint point = new GeoPoint(latitude, longitude); // validates range
-        liveStore.save(new LiveLocation(eventId, userId, point, Instant.now()), liveTtl);
+        LiveLocation live = new LiveLocation(eventId, userId, point, Instant.now());
+        // 1) Persist to Redis exactly as before (encrypted at the adapter boundary).
+        liveStore.save(live, liveTtl);
+        // 2) Fan-out to STOMP subscribers. Fire-and-forget; failure to broadcast
+        //    must NOT roll back the Redis write — the live map can lag, persistence cannot.
+        broadcaster.publishUserPosition(live);
     }
 
     @Override
@@ -88,6 +97,11 @@ public class LocationTrackingService implements TrackLocationCase, LocationMaint
         storedRepository.save(StoredLocation.incident(reporterLive.get(), reportId));
         log.info("Persisted permanent incident location for reporter {} on event {} (report {})",
                 reporterId, eventId, reportId);
+    }
+
+    @Override
+    public void onSubscriberJoined(UUID eventId, String sessionId) {
+        broadcaster.seedSubscriber(eventId, sessionId);
     }
 
     private void flushEvent(UUID eventId) {
