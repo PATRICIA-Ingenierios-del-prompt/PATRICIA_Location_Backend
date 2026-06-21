@@ -31,6 +31,23 @@ public class StoredLocationRepositoryAdapter implements StoredLocationRepository
     }
 
     @Override
+    @Transactional
+    public void upsertRoutineLastKnown(StoredLocation location) {
+        repository.findRoutineFor(location.getEventId(), location.getUserId())
+                .ifPresentOrElse(
+                        existing -> {
+                            existing.setLatitudeCipher(encryption.encrypt(Double.toString(location.getPoint().latitude())));
+                            existing.setLongitudeCipher(encryption.encrypt(Double.toString(location.getPoint().longitude())));
+                            existing.setRecordedAt(location.getRecordedAt());
+                            existing.setExpiresAt(location.getExpiresAt());
+                            // reportId stays null; reason stays ROUTINE_FLUSH.
+                            repository.save(existing);
+                        },
+                        () -> repository.save(toEncryptedEntity(location))
+                );
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<StoredLocation> findDecryptedByEventId(UUID eventId) {
         return repository.findByEventId(eventId).stream().map(this::toDecryptedDomain).toList();
