@@ -1,6 +1,5 @@
 package ingprompt.patricia.location.infrastructure.ws.security;
 
-import ingprompt.patricia.location.application.port.in.LiveStreamSubscriptionCase;
 import ingprompt.patricia.location.application.port.out.LiveLocationStoreOutPort;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +24,6 @@ public class StompSubscriptionAuthInterceptor implements ChannelInterceptor {
     private static final Pattern GEO_TOPIC = Pattern.compile("^/topic/geo/([0-9a-fA-F-]{36})$");
 
     private final LiveLocationStoreOutPort liveStore;
-    private final LiveStreamSubscriptionCase subscriptionCase;
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
@@ -58,16 +56,7 @@ public class StompSubscriptionAuthInterceptor implements ChannelInterceptor {
 
         if (!liveStore.isRegistered(eventId, userId)) {
             log.warn("Rejecting SUBSCRIBE: user {} is not registered for event {}", userId, eventId);
-            return null; // drop the SUBSCRIBE; client never receives broadcasts
-        }
-
-        // Admitted. After Spring finishes processing the SUBSCRIBE, send the snapshot
-        // privately to this session. We schedule it post-send by hooking postSend below
-        // would be cleaner, but a direct call works because seedSubscriber pushes via
-        // SimpMessagingTemplate which is thread-safe.
-        String sessionId = accessor.getSessionId();
-        if (sessionId != null) {
-            subscriptionCase.onSubscriberJoined(eventId, sessionId);
+            return null;
         }
         return message;
     }
