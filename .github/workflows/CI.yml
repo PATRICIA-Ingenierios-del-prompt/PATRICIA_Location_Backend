@@ -14,34 +14,9 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
 
-    # ---------------------------------------------------------------------------
-    # Service containers for integration tests. Commented out until the test
-    # suite exists — re-enable together with the "Run tests" step below.
-    # ---------------------------------------------------------------------------
-    # services:
-    #   postgres:
-    #     image: postgres:16-alpine
-    #     env:
-    #       POSTGRES_USER: admin
-    #       POSTGRES_PASSWORD: rootpassword
-    #       POSTGRES_DB: location_db
-    #     ports:
-    #       - 5432:5432
-    #     options: >-
-    #       --health-cmd "pg_isready -U admin -d location_db"
-    #       --health-interval 10s
-    #       --health-timeout 5s
-    #       --health-retries 5
-    #
-    #   redis:
-    #     image: redis:7-alpine
-    #     ports:
-    #       - 6379:6379
-    #     options: >-
-    #       --health-cmd "redis-cli ping"
-    #       --health-interval 10s
-    #       --health-timeout 5s
-    #       --health-retries 5
+    # Integration tests (*IT) spin up Postgres and Redis through Testcontainers,
+    # which uses the Docker daemon preinstalled on ubuntu-latest. No GitHub
+    # service containers are needed — Testcontainers manages container lifecycle.
 
     steps:
       - name: Checkout code
@@ -56,25 +31,11 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      # Compiles the project and verifies it builds + packages correctly.
-      # -DskipTests because the test suite is not in place yet.
-      - name: Build (compile + package)
-        run: mvn -B clean package -DskipTests
-
-      # -------------------------------------------------------------------------
-      # Run tests + coverage. Enable once tests exist.
-      # The -Pcoverage profile must wire the jacoco-maven-plugin with a
-      # check rule (LINE >= 0.80, haltOnFailure=true) so the build — and any
-      # PR into develop — is blocked when coverage drops below 80%.
-      # -------------------------------------------------------------------------
-      # - name: Run tests + coverage
-      #   env:
-      #     SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/location_db
-      #     SPRING_DATASOURCE_USERNAME: admin
-      #     SPRING_DATASOURCE_PASSWORD: rootpassword
-      #     SPRING_DATA_REDIS_HOST: localhost
-      #     SPRING_DATA_REDIS_PORT: 6379
-      #   run: mvn -B clean verify -Pcoverage
+      # Compiles, runs unit tests (Surefire, *Test) + Testcontainers
+      # integration tests (Failsafe, *IT), enforces the 80% coverage gate
+      # (-Pcoverage, unit + integration aggregated) and packages the jar.
+      - name: Build, test & coverage
+        run: mvn -B clean verify -Pcoverage
 
       # -------------------------------------------------------------------------
       # SonarCloud quality gate. Enable once the SonarCloud project + secrets
