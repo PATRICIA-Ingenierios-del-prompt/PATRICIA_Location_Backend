@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    # ---------------------------------------------------------------------------
+    # Service containers for integration tests. Commented out until the test
+    # suite exists — re-enable together with the "Run tests" step below.
+    # ---------------------------------------------------------------------------
+    # services:
+    #   postgres:
+    #     image: postgres:16-alpine
+    #     env:
+    #       POSTGRES_USER: admin
+    #       POSTGRES_PASSWORD: rootpassword
+    #       POSTGRES_DB: location_db
+    #     ports:
+    #       - 5432:5432
+    #     options: >-
+    #       --health-cmd "pg_isready -U admin -d location_db"
+    #       --health-interval 10s
+    #       --health-timeout 5s
+    #       --health-retries 5
+    #
+    #   redis:
+    #     image: redis:7-alpine
+    #     ports:
+    #       - 6379:6379
+    #     options: >-
+    #       --health-cmd "redis-cli ping"
+    #       --health-interval 10s
+    #       --health-timeout 5s
+    #       --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      # Compiles the project and verifies it builds + packages correctly.
+      # -DskipTests because the test suite is not in place yet.
+      - name: Build (compile + package)
+        run: mvn -B clean package -DskipTests
+
+      # -------------------------------------------------------------------------
+      # Run tests + coverage. Enable once tests exist.
+      # The -Pcoverage profile must wire the jacoco-maven-plugin with a
+      # check rule (LINE >= 0.80, haltOnFailure=true) so the build — and any
+      # PR into develop — is blocked when coverage drops below 80%.
+      # -------------------------------------------------------------------------
+      # - name: Run tests + coverage
+      #   env:
+      #     SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/location_db
+      #     SPRING_DATASOURCE_USERNAME: admin
+      #     SPRING_DATASOURCE_PASSWORD: rootpassword
+      #     SPRING_DATA_REDIS_HOST: localhost
+      #     SPRING_DATA_REDIS_PORT: 6379
+      #   run: mvn -B clean verify -Pcoverage
+
+      # -------------------------------------------------------------------------
+      # SonarCloud quality gate. Enable once the SonarCloud project + secrets
+      # are configured. A failing quality gate blocks the PR into develop.
+      # -------------------------------------------------------------------------
+      # - name: Sonar analysis (branch)
+      #   if: github.event_name == 'push'
+      #   env:
+      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_BACKEND }}
+      #   run: |
+      #     mvn --batch-mode sonar:sonar \
+      #       -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY_BACKEND }} \
+      #       -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }} \
+      #       -Dsonar.host.url=https://sonarcloud.io \
+      #       -Dsonar.token=${{ secrets.SONAR_TOKEN_BACKEND }} \
+      #       -Dsonar.coverage.jacoco.xmlReportPaths=${GITHUB_WORKSPACE}/target/site/jacoco/jacoco.xml \
+      #       -Dsonar.java.binaries=target/classes \
+      #       -Dsonar.sources=src/main/java \
+      #       -Dsonar.tests=src/test/java \
+      #       -Dsonar.exclusions="**/LocationApplication.java" \
+      #       -Dsonar.coverage.exclusions="**/LocationApplication.java,**/dto/**,**/*Entity.java,**/*Mapper.java,**/config/**"
+      #
+      # - name: Sonar analysis (pull request)
+      #   if: github.event_name == 'pull_request'
+      #   env:
+      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_BACKEND }}
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #   run: |
+      #     mvn --batch-mode sonar:sonar \
+      #       -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY_BACKEND }} \
+      #       -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }} \
+      #       -Dsonar.host.url=https://sonarcloud.io \
+      #       -Dsonar.token=${{ secrets.SONAR_TOKEN_BACKEND }} \
+      #       -Dsonar.coverage.jacoco.xmlReportPaths=${GITHUB_WORKSPACE}/target/site/jacoco/jacoco.xml \
+      #       -Dsonar.java.binaries=target/classes \
+      #       -Dsonar.sources=src/main/java \
+      #       -Dsonar.tests=src/test/java \
+      #       -Dsonar.exclusions="**/LocationApplication.java" \
+      #       -Dsonar.coverage.exclusions="**/LocationApplication.java,**/dto/**,**/*Entity.java,**/*Mapper.java,**/config/**" \
+      #       -Dsonar.pullrequest.key=${{ github.event.pull_request.number }} \
+      #       -Dsonar.pullrequest.branch=${{ github.head_ref }} \
+      #       -Dsonar.pullrequest.base=${{ github.base_ref }}
+
+      # Verifies the Dockerfile builds, so the CD pipeline is straightforward later.
+      - name: Build Docker image (verify Dockerfile works)
+        run: docker build -t patricia-location:ci .
