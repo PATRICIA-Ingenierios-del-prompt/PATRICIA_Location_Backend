@@ -91,9 +91,10 @@ class LocationControllerTest {
     @Test
     void liveSnapshot_returns200() throws Exception {
         LiveLocation live = new LiveLocation(eventId, userId, new GeoPoint(4.6, -74.0), Instant.now());
-        when(trackLocationCase.liveSnapshot(eventId)).thenReturn(List.of(live));
+        when(trackLocationCase.liveSnapshot(eventId, userId)).thenReturn(List.of(live));
 
-        mockMvc.perform(get("/api/locations/{eventId}/live", eventId))
+        mockMvc.perform(get("/api/locations/{eventId}/live", eventId)
+                        .header("X-User-Id", userId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].userId").value(userId.toString()));
     }

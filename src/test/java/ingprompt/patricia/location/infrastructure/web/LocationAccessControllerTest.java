@@ -46,7 +46,7 @@ class LocationAccessControllerTest {
 
         mockMvc.perform(get("/api/locations/{eventId}/decrypted", eventId)
                         .header("X-User-Id", requesterId)
-                        .header("X-User-Role", "ROLE_LEGAL_COMPLIANCE"))
+                        .header("X-User-Roles", "ROLE_LEGAL_COMPLIANCE"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].latitude").value(4.6));
     }
@@ -58,7 +58,7 @@ class LocationAccessControllerTest {
 
         mockMvc.perform(get("/api/locations/{eventId}/decrypted", eventId)
                         .header("X-User-Id", requesterId)
-                        .header("X-User-Role", "ROLE_USER"))
+                        .header("X-User-Roles", "ROLE_USER"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error").exists());
     }

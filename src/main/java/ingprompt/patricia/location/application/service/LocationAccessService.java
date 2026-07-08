@@ -9,6 +9,7 @@ import ingprompt.patricia.location.domain.model.StoredLocation;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -32,17 +33,17 @@ public class LocationAccessService implements LocationAccessCase {
     }
 
     @Override
-    public List<StoredLocation> decryptStoredForEvent(UUID eventId, UUID requesterId, String role) {
-        boolean authorized = role != null && AUTHORIZED_ROLES.contains(role);
-
-        // Audit BOTH the denial and the grant — the attempt itself is legally relevant.
+    public List<StoredLocation> decryptStoredForEvent(UUID eventId, UUID requesterId, String roles) {
+        boolean authorized = roles != null && Arrays.stream(roles.split(","))
+                .map(String::trim)
+                .anyMatch(AUTHORIZED_ROLES::contains);
         if (!authorized) {
-            auditLog.record(AuditEntry.of(requesterId, role, ACTION, eventId, false, "Denied: role not permitted to decrypt location data"));
-            throw new UnauthorizedLocationAccessException(requesterId, role);
+            auditLog.record(AuditEntry.of(requesterId, roles, ACTION, eventId, false, "Denied: role not permitted to decrypt location data"));
+            throw new UnauthorizedLocationAccessException(requesterId, roles);
         }
 
         List<StoredLocation> decrypted = storedRepository.findDecryptedByEventId(eventId);
-        auditLog.record(AuditEntry.of(requesterId, role, ACTION, eventId, true, "Decrypted " + decrypted.size() + " location rows for event " + eventId));
+        auditLog.record(AuditEntry.of(requesterId, roles, ACTION, eventId, true, "Decrypted " + decrypted.size() + " location rows for event " + eventId));
         return decrypted;
     }
 }
