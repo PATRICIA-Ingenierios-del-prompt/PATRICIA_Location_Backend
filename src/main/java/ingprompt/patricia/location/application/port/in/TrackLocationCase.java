@@ -7,5 +7,5 @@ import java.util.UUID;
 
 public interface TrackLocationCase {
     void updateLiveLocation(UUID eventId, UUID userId, double latitude, double longitude);
-    List<LiveLocation> liveSnapshot(UUID eventId);
+    List<LiveLocation> liveSnapshot(UUID eventId, UUID requesterId);
 }

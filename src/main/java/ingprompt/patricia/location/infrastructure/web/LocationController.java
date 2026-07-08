@@ -24,8 +24,8 @@ public class LocationController {
     }
 
     @GetMapping("/{eventId}/live")
-    public ResponseEntity<List<LiveLocationResponse>> liveSnapshot(@PathVariable UUID eventId) {
-        List<LiveLocationResponse> snapshot = trackLocationCase.liveSnapshot(eventId).stream().map(LiveLocationResponse::from).toList();
+    public ResponseEntity<List<LiveLocationResponse>> liveSnapshot(@PathVariable UUID eventId, @RequestHeader("X-User-Id") UUID requesterId) {
+        List<LiveLocationResponse> snapshot = trackLocationCase.liveSnapshot(eventId, requesterId).stream().map(LiveLocationResponse::from).toList();
         return ResponseEntity.ok(snapshot);
     }
 }
