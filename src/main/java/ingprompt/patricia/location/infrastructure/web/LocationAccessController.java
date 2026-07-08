@@ -16,9 +16,9 @@ public class LocationAccessController {
     private final LocationAccessCase locationAccessCase;
 
     @GetMapping("/{eventId}/decrypted")
-    public ResponseEntity<List<StoredLocationResponse>> decrypted(@PathVariable UUID eventId, @RequestHeader("X-User-Id") UUID requesterId, @RequestHeader("X-User-Role") String role) {
+    public ResponseEntity<List<StoredLocationResponse>> decrypted(@PathVariable UUID eventId, @RequestHeader("X-User-Id") UUID requesterId, @RequestHeader("X-User-Roles") String roles) {
         List<StoredLocationResponse> result = locationAccessCase
-                .decryptStoredForEvent(eventId, requesterId, role).stream()
+                .decryptStoredForEvent(eventId, requesterId, roles).stream()
                 .map(StoredLocationResponse::from)
                 .toList();
         return ResponseEntity.ok(result);

@@ -54,7 +54,10 @@ public class LocationTrackingService implements TrackLocationCase, LocationMaint
     }
 
     @Override
-    public List<LiveLocation> liveSnapshot(UUID eventId) {
+    public List<LiveLocation> liveSnapshot(UUID eventId, UUID requesterId) {
+        if (!liveStore.isRegistered(eventId, requesterId)) {
+            throw new UserNotRegisteredForEventException();
+        }
         return liveStore.snapshot(eventId);
     }
 

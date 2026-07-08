@@ -88,9 +88,18 @@ class LocationTrackingServiceTest {
     }
 
     @Test
-    void liveSnapshot_delegates() {
+    void liveSnapshot_whenRegistered_delegates() {
+        when(liveStore.isRegistered(eventId, userId)).thenReturn(true);
         when(liveStore.snapshot(eventId)).thenReturn(List.of(live()));
-        assertThat(service.liveSnapshot(eventId)).hasSize(1);
+        assertThat(service.liveSnapshot(eventId, userId)).hasSize(1);
+    }
+
+    @Test
+    void liveSnapshot_whenNotRegistered_throws() {
+        when(liveStore.isRegistered(eventId, userId)).thenReturn(false);
+        assertThatThrownBy(() -> service.liveSnapshot(eventId, userId))
+                .isInstanceOf(UserNotRegisteredForEventException.class);
+        verify(liveStore, never()).snapshot(any());
     }
 
     // ---- LocationMaintenanceCase ----
