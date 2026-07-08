@@ -1,4 +1,4 @@
-package ingprompt.patricia.location.infrastructure.backplane;
+package ingprompt.patricia.location.infrastructure.backplane.config;
 
 import lombok.Getter;
 import lombok.Setter;

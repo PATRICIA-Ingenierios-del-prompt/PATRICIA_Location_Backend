@@ -75,6 +75,16 @@ class StompLocationBroadcasterTest {
     }
 
     @Test
+    void publishUserPosition_whenBackplaneAndLocalFail_neverPropagates() {
+        when(backplaneProvider.getIfAvailable()).thenReturn(backplanePublisher);
+        doThrow(new RuntimeException("redis down")).when(backplanePublisher).publish(any(), any());
+        doThrow(new RuntimeException("broker down")).when(messagingTemplate)
+                .convertAndSend(eq("/topic/geo/" + eventId), any(GeoBroadcastMessage.class));
+        // persistence already happened upstream; broadcasting must never throw
+        broadcaster.publishUserPosition(live());
+    }
+
+    @Test
     void seedSubscriber_sendsSnapshotToSession() {
         when(liveStore.snapshot(eventId)).thenReturn(List.of(live()));
 

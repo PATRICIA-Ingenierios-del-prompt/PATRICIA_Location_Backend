@@ -24,7 +24,8 @@ public class BackplaneStompRelay implements MessageListener {
         try {
             String json = new String(message.getBody(), StandardCharsets.UTF_8);
             BackplaneEnvelope envelope = objectMapper.readValue(json, BackplaneEnvelope.class);
-            if (envelope.destination() == null || envelope.payload() == null) {
+            // Nota: un "payload": null en el JSON llega como NullNode, no como null Java.
+            if (envelope.destination() == null || envelope.payload() == null || envelope.payload().isNull()) {
                 log.warn("Backplane message dropped: missing destination or payload");
                 return;
             }
