@@ -3,6 +3,7 @@ package ingprompt.patricia.location.infrastructure.ws;
 import ingprompt.patricia.location.application.port.out.LiveLocationStoreOutPort;
 import ingprompt.patricia.location.domain.model.GeoPoint;
 import ingprompt.patricia.location.domain.model.LiveLocation;
+import ingprompt.patricia.location.infrastructure.backplane.RedisBackplanePublisher;
 import ingprompt.patricia.location.infrastructure.ws.dto.GeoBroadcastMessage;
 import ingprompt.patricia.location.infrastructure.ws.dto.GeoSnapshotMessage;
 import org.junit.jupiter.api.BeforeEach;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.time.Instant;
@@ -18,6 +20,7 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -28,6 +31,10 @@ class StompLocationBroadcasterTest {
     private SimpMessagingTemplate messagingTemplate;
     @Mock
     private LiveLocationStoreOutPort liveStore;
+    @Mock
+    private ObjectProvider<RedisBackplanePublisher> backplaneProvider;
+    @Mock
+    private RedisBackplanePublisher backplanePublisher;
 
     private StompLocationBroadcaster broadcaster;
 
@@ -36,7 +43,7 @@ class StompLocationBroadcasterTest {
 
     @BeforeEach
     void setUp() {
-        broadcaster = new StompLocationBroadcaster(messagingTemplate, liveStore);
+        broadcaster = new StompLocationBroadcaster(messagingTemplate, liveStore, backplaneProvider);
     }
 
     private LiveLocation live() {
@@ -44,7 +51,25 @@ class StompLocationBroadcasterTest {
     }
 
     @Test
-    void publishUserPosition_sendsToEventTopic() {
+    void publishUserPosition_withoutBackplane_sendsToLocalTopic() {
+        when(backplaneProvider.getIfAvailable()).thenReturn(null);
+        broadcaster.publishUserPosition(live());
+        verify(messagingTemplate).convertAndSend(eq("/topic/geo/" + eventId), any(GeoBroadcastMessage.class));
+    }
+
+    @Test
+    void publishUserPosition_withBackplane_publishesToRedisNotLocally() {
+        when(backplaneProvider.getIfAvailable()).thenReturn(backplanePublisher);
+        broadcaster.publishUserPosition(live());
+        verify(backplanePublisher).publish(eq("/topic/geo/" + eventId), any(GeoBroadcastMessage.class));
+        verify(messagingTemplate, org.mockito.Mockito.never())
+                .convertAndSend(eq("/topic/geo/" + eventId), any(GeoBroadcastMessage.class));
+    }
+
+    @Test
+    void publishUserPosition_whenBackplaneFails_fallsBackToLocalBroadcast() {
+        when(backplaneProvider.getIfAvailable()).thenReturn(backplanePublisher);
+        doThrow(new RuntimeException("redis down")).when(backplanePublisher).publish(any(), any());
         broadcaster.publishUserPosition(live());
         verify(messagingTemplate).convertAndSend(eq("/topic/geo/" + eventId), any(GeoBroadcastMessage.class));
     }
