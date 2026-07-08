@@ -72,4 +72,40 @@ class BackplaneRoundTripTest {
                         "not-json".getBytes(StandardCharsets.UTF_8)), null);
         verify(messagingTemplate, never()).convertAndSend(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(Object.class));
     }
+
+    @Test
+    void envelopeWithoutDestination_isDroppedWithoutRelaying() {
+        String json = "{\"destination\":null,\"payload\":{\"x\":1}}";
+        new BackplaneStompRelay(messagingTemplate, objectMapper)
+                .onMessage(new DefaultMessage(CHANNEL.getBytes(StandardCharsets.UTF_8),
+                        json.getBytes(StandardCharsets.UTF_8)), null);
+        verify(messagingTemplate, never()).convertAndSend(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(Object.class));
+    }
+
+    @Test
+    void envelopeWithoutPayload_isDroppedWithoutRelaying() {
+        String json = "{\"destination\":\"/topic/geo/x\",\"payload\":null}";
+        new BackplaneStompRelay(messagingTemplate, objectMapper)
+                .onMessage(new DefaultMessage(CHANNEL.getBytes(StandardCharsets.UTF_8),
+                        json.getBytes(StandardCharsets.UTF_8)), null);
+        verify(messagingTemplate, never()).convertAndSend(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(Object.class));
+    }
+
+    @Test
+    void relayFailure_isSwallowed_neverKillsTheListener() throws Exception {
+        UUID eventId = UUID.randomUUID();
+        String destination = "/topic/geo/" + eventId;
+        new RedisBackplanePublisher(backplaneRedis, objectMapper, CHANNEL)
+                .publish(destination, new GeoBroadcastMessage(UUID.randomUUID(), 4.6, -74.0, Instant.now()));
+        ArgumentCaptor<String> wire = ArgumentCaptor.forClass(String.class);
+        verify(backplaneRedis).convertAndSend(eq(CHANNEL), wire.capture());
+
+        org.mockito.Mockito.doThrow(new org.springframework.messaging.MessagingException("broker down"))
+                .when(messagingTemplate).convertAndSend(eq(destination), org.mockito.ArgumentMatchers.any(Object.class));
+
+        BackplaneStompRelay relay = new BackplaneStompRelay(messagingTemplate, objectMapper);
+        // must not throw
+        relay.onMessage(new DefaultMessage(CHANNEL.getBytes(StandardCharsets.UTF_8),
+                wire.getValue().getBytes(StandardCharsets.UTF_8)), null);
+    }
 }

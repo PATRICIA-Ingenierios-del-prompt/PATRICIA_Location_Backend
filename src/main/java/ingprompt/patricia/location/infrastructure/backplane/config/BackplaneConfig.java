@@ -1,6 +1,8 @@
-package ingprompt.patricia.location.infrastructure.backplane;
+package ingprompt.patricia.location.infrastructure.backplane.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import ingprompt.patricia.location.infrastructure.backplane.BackplaneStompRelay;
+import ingprompt.patricia.location.infrastructure.backplane.RedisBackplanePublisher;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
