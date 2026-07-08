@@ -3,10 +3,12 @@ package ingprompt.patricia.location.infrastructure.ws;
 import ingprompt.patricia.location.application.port.out.LiveLocationStoreOutPort;
 import ingprompt.patricia.location.application.port.out.LocationBroadcasterPort;
 import ingprompt.patricia.location.domain.model.LiveLocation;
+import ingprompt.patricia.location.infrastructure.backplane.RedisBackplanePublisher;
 import ingprompt.patricia.location.infrastructure.ws.dto.GeoBroadcastMessage;
 import ingprompt.patricia.location.infrastructure.ws.dto.GeoSnapshotMessage;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessageType;
@@ -26,17 +28,31 @@ public class StompLocationBroadcaster implements LocationBroadcasterPort {
 
     private final SimpMessagingTemplate messagingTemplate;
     private final LiveLocationStoreOutPort liveStore;
+    private final ObjectProvider<RedisBackplanePublisher> backplane;
 
     @Override
     public void publishUserPosition(LiveLocation location) {
+        String destination = TOPIC_PREFIX + location.eventId();
+        GeoBroadcastMessage message = GeoBroadcastMessage.from(location);
         try {
-            messagingTemplate.convertAndSend(
-                    TOPIC_PREFIX + location.eventId(),
-                    GeoBroadcastMessage.from(location));
+            RedisBackplanePublisher publisher = backplane.getIfAvailable();
+            if (publisher != null) {
+                publisher.publish(destination, message);
+            } else {
+                messagingTemplate.convertAndSend(destination, message);
+            }
         } catch (RuntimeException ex) {
-            // Live map can lag; persistence cannot. Never propagate.
-            log.warn("Failed to broadcast position for user {} on event {}: {}",
+            log.warn("Backplane publish failed for user {} on event {} — falling back to local broadcast: {}",
                     location.userId(), location.eventId(), ex.getMessage());
+            tryLocalBroadcast(destination, message);
+        }
+    }
+
+    private void tryLocalBroadcast(String destination, GeoBroadcastMessage message) {
+        try {
+            messagingTemplate.convertAndSend(destination, message);
+        } catch (RuntimeException ex) {
+            log.warn("Local broadcast also failed for {}: {}", destination, ex.getMessage());
         }
     }
 

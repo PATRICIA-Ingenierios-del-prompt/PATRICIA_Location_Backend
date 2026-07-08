@@ -79,6 +79,14 @@ services:
       JPA_SHOW_SQL: "false"
       # Override the dev key in real deployments (KMS/Vault-managed 256-bit secret).
       LOCATION_ENCRYPTION_SECRET: dev-only-change-me-in-production
+      # --- Socket backplane (Redis Cluster #2, pub/sub compartido entre MS de sockets) ---
+      # Off by default: one pod doesn't need it. In multi-pod deployments set
+      # BACKPLANE_ENABLED=true and point BACKPLANE_REDIS_* at the SHARED pub/sub
+      # cluster (NOT this stack's cache redis).
+      BACKPLANE_ENABLED: ${BACKPLANE_ENABLED:-false}
+      BACKPLANE_REDIS_HOST: ${BACKPLANE_REDIS_HOST:-redis}
+      BACKPLANE_REDIS_PORT: ${BACKPLANE_REDIS_PORT:-6379}
+      BACKPLANE_CHANNEL: ${BACKPLANE_CHANNEL:-patricia:backplane:location}
     ports:
       - "8089:8089"
     networks:
