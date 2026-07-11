@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: location
+  namespace: patricia-app
+  # patricia.io/sg-tier: socket (NO "standard"). Location esta en
+  # var.socket_services (infra) y necesita ademas del SG eks_pods el SG
+  # socket_ms_pods para alcanzar el backplane Redis (Cluster #2, Sec 4.1).
+  #
+  # BLOQUEANTE DE INFRA (no de este repo): a la fecha de este chart,
+  # security-group-policy.tf en Ulink_Infra SOLO define el SecurityGroupPolicy
+  # para la label "standard" (Fargate necesita esta CRD o el pod se queda en
+  # "Pod provisioning timed out"). Falta crear la policy para "socket":
+  #
+  #   resource "kubernetes_manifest" "patricia_app_socket_pods_sg_policy" {
+  #     manifest = {
+  #       apiVersion = "vpcresources.k8s.aws/v1beta1"
+  #       kind       = "SecurityGroupPolicy"
+  #       metadata = { name = "patricia-app-socket-pods", namespace = "patricia-app" }
+  #       spec = {
+  #         podSelector    = { matchLabels = { "patricia.io/sg-tier" = "socket" } }
+  #         securityGroups = {
+  #           groupIds = [
+  #             module.security_groups.eks_pods_sg_id,
+  #             module.security_groups.socket_ms_pods_sg_id,
+  #             module.eks.cluster_security_group_id,
+  #           ]
+  #         }
+  #       }
+  #     }
+  #   }
+  #
+  # Hasta que esa policy exista y se aplique, los pods de este Deployment
+  # arrancan (Postgres/Redis-cache/RabbitMQ funcionan via el SG "standard"
+  # normal) pero NO tienen ruta de red al backplane -> mantener
+  # config.backplaneEnabled=false en values.yaml hasta resolverlo, o el pod
+  # colgara intentando conectar a BACKPLANE_REDIS_HOST.
+  labels: { app: location, patricia.io/sg-tier: socket }
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: { app: location }
+  template:
+    metadata:
+      labels: { app: location, patricia.io/sg-tier: socket }
+    spec:
+      serviceAccountName: location
+      containers:
+        - name: location
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8089
+          envFrom:
+            - configMapRef: { name: location-config }
+            - secretRef:    { name: location-secrets }
+          # Sin SecurityConfig.java en este repo (no hay dependencia
+          # spring-security), asi que /actuator/health/** no necesita el fix
+          # de permitAll que si tuvo Auth - no hay filter chain que lo bloquee.
+          #
+          # REQUIERE spring-boot-starter-actuator en el pom.xml (hoy no esta
+          # en el repo Location - ver nota en el README de este PR). Sin esa
+          # dependencia /actuator/health responde 404, los 3 probes de abajo
+          # nunca pasan, el pod nunca llega a Ready, y `helm upgrade --wait`
+          # de CI.yml termina en timeout.
+          startupProbe:
+            httpGet: { path: /actuator/health, port: 8089 }
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /actuator/health, port: 8089 }
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8089 }
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

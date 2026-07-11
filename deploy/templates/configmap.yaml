@@ -1,0 +1,14 @@
+# Configuracion no sensible. Credenciales de RabbitMQ/Postgres(Neon)/Redis cache/
+# Redis backplane vienen del Secret location-secrets sincronizado por el
+# ExternalSecret (ver externalsecret.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: location-config
+  namespace: patricia-app
+data:
+  LOCATION_LIVE_TTL_SECONDS: {{ .Values.config.locationLiveTtlSeconds | quote }}
+  LOCATION_ROUTINE_TTL_HOURS: {{ .Values.config.locationRoutineTtlHours | quote }}
+  LOCATION_FLUSH_DELAY_MS: {{ .Values.config.locationFlushDelayMs | quote }}
+  BACKPLANE_ENABLED: {{ .Values.config.backplaneEnabled | quote }}
+  BACKPLANE_CHANNEL: {{ .Values.config.backplaneChannel | quote }}

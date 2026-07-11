@@ -1,0 +1,6 @@
+apiVersion: v2
+name: location
+description: PATRICIA Location MS (8089, socket MS con backplane Redis) — desplegado por el job CD en .github/workflows/CI.yml en push a main
+type: application
+version: 0.1.0
+appVersion: "0.0.1"

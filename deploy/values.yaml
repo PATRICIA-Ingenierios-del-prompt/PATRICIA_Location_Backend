@@ -1,0 +1,90 @@
+# Defaults para el chart de Location. El job de CD sobreescribe image.repository
+# e image.tag en cada deploy (fijado al SHA corto del commit); todo lo demas se
+# edita aqui y se versiona junto con el codigo que configura.
+#
+# NAMING: a diferencia de Parches (app "parches" vs infra "parche-core"), aqui
+# NO hay mismatch: repo, ECR (patricia-dev/location), IRSA role
+# (patricia-dev-location-irsa), ServiceAccount y Service se llaman todos
+# "location". spring.application.name=location, puerto 8089.
+#
+# DB: Location usa Neon (Postgres serverless externo), NO RDS - el secreto en
+# Secrets Manager es patricia-dev/location/postgres (no .../rds), pero con la
+# MISMA forma SPRING_DATASOURCE_URL/USERNAME/PASSWORD, asi que el chart no
+# distingue el backend.
+#
+# SOCKET MS: Location esta en var.socket_services (infra), o sea que necesita
+# el backplane Redis (Cluster #2) ademas del cache Redis (Cluster #1). Revisa
+# el comentario en deployment.yaml sobre la label patricia.io/sg-tier: socket
+# y el prerequisito de infra que falta antes de habilitar esto con >1 replica.
+
+image:
+  repository: ""            # set by CD: <account>.dkr.ecr.<region>.amazonaws.com/patricia-dev/location
+  tag: ""                   # set by CD: short commit SHA
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+serviceAccount:
+  # Reutiliza el rol IRSA pre-provisionado (module.eks.service_irsa["location"]).
+  # Igual que en Parches, sin policy de permisos todavia (Location no llama APIs
+  # de AWS via IRSA hoy - RDS/Redis/MQ se alcanzan por Security Group, no IAM).
+  # Dejar vacio hasta que se necesite una llamada real a un API de AWS via IRSA.
+  roleArn: ""
+
+config:
+  # No sensible.
+  # --- Dominio Location ---
+  locationLiveTtlSeconds: "300"
+  locationRoutineTtlHours: "12"
+  locationFlushDelayMs: "900000"
+  # --- Backplane (Redis Cluster #2, pub/sub compartido entre MS de sockets) ---
+  # IMPORTANTE: dejar en "false" hasta que el SecurityGroupPolicy del tier
+  # "socket" exista en el repo de infra (ver nota en deployment.yaml) - sin esa
+  # policy los pods de este chart NO tienen ruta de red al Cluster #2 y las
+  # conexiones a BACKPLANE_REDIS_HOST simplemente cuelgan/fallan.
+  backplaneEnabled: "false"
+  backplaneChannel: "patricia:backplane:location"
+
+externalSecrets:
+  clusterSecretStore: patricia-aws-secrets-manager
+  prefix: "patricia-dev"
+  # Lo que ya esta provisionado en AWS Secrets Manager (confirmado leyendo
+  # modules/secrets/main.tf del repo de infra):
+  #   patricia-dev/amazon-mq          -> EXISTS. SPRING_RABBITMQ_ADDRESSES/USERNAME/PASSWORD
+  #                                       (URI amqps://...:5671, NO host+port separados -
+  #                                       ver nota de application.properties en el README
+  #                                       de este PR: Location debe pasar a
+  #                                       spring.rabbitmq.addresses, igual que Parches,
+  #                                       en vez de RABBITMQ_HOST/PORT actuales).
+  #   patricia-dev/cache-redis        -> EXISTS. REDIS_HOST/REDIS_PORT/REDIS_PASSWORD -
+  #                                       coincide EXACTO con lo que ya lee
+  #                                       application.properties (spring.data.redis.*),
+  #                                       sin renombrar nada.
+  #   patricia-dev/backplane-redis    -> EXISTS (compartido entre los 5 MS de socket).
+  #                                       BACKPLANE_REDIS_HOST/PORT/PASSWORD - coincide
+  #                                       exacto con backplane.redis.* de application.properties.
+  #   patricia-dev/location/postgres  -> EXISTS via var.neon_databases (Neon, no RDS).
+  #                                       SPRING_DATASOURCE_URL/USERNAME/PASSWORD, coincide
+  #                                       exacto, sin renombrar (igual que Parches/rds).
+  #
+  # NO provisionado todavia, y es un bloqueante real, no un "falta crear el secreto":
+  #   patricia-dev/location/encryption -> NO EXISTS. LOCATION_ENCRYPTION_SECRET (clave
+  #     AES-256 con la que LocationEncryptionService/EncryptionConfig cifra los datos
+  #     de ubicacion - "solo ROLE_LEGAL_COMPLIANCE puede descifrar" depende de la
+  #     custodia de esta clave) no tiene ningun resource en modules/secrets. Hay que
+  #     crearlo a mano una vez (fuera de Terraform, igual que Neon):
+  #       aws secretsmanager create-secret --name patricia-dev/location/encryption \
+  #         --secret-string '{"LOCATION_ENCRYPTION_SECRET":"<32+ bytes aleatorios>"}'
+  #     El ExternalSecret de este chart ya lo referencia (ver externalsecret.yaml);
+  #     mientras no exista, el ExternalSecret queda en SecretSyncError y el pod no
+  #     arranca (a diferencia del caso S3 de Parches, aqui SI es un valor requerido
+  #     en el arranque de la app, no hay fallback "4xx en runtime").
+
+resources:
+  requests: { cpu: 500m, memory: 768Mi }
+  limits:   { cpu: "1",  memory: 1Gi }
+
+hpa:
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70

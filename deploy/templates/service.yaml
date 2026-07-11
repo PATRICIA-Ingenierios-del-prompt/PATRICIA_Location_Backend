@@ -1,0 +1,19 @@
+# Nombre `location` (coincide con spring.application.name / el repo). Si el
+# RouteConfig del Gateway espera otro hostname in-cluster para este MS,
+# renombra este Service (y el ServiceAccount/Deployment) para que coincida -
+# revisa RouteConfig.java del Gateway antes de asumir que "location" es correcto.
+# Nota: Gateway ya rutea /api/locations/* y /ws/geo/* segun el modulo frontend
+# de infra (CloudFront ordered_cache_behavior), lo cual sugiere que "location"
+# es efectivamente el nombre esperado.
+apiVersion: v1
+kind: Service
+metadata:
+  name: location
+  namespace: patricia-app
+  labels: { app: location }
+spec:
+  type: ClusterIP
+  selector: { app: location }
+  ports:
+    - port: 8089
+      targetPort: 8089
