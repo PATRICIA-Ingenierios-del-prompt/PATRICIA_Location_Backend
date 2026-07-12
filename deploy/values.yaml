@@ -38,11 +38,13 @@ config:
   locationRoutineTtlHours: "12"
   locationFlushDelayMs: "900000"
   # --- Backplane (Redis Cluster #2, pub/sub compartido entre MS de sockets) ---
-  # IMPORTANTE: dejar en "false" hasta que el SecurityGroupPolicy del tier
-  # "socket" exista en el repo de infra (ver nota en deployment.yaml) - sin esa
-  # policy los pods de este chart NO tienen ruta de red al Cluster #2 y las
-  # conexiones a BACKPLANE_REDIS_HOST simplemente cuelgan/fallan.
-  backplaneEnabled: "false"
+  # Habilitado: el SecurityGroupPolicy del tier "socket" (patricia-app-socket-pods)
+  # ya existe en Ulink_Infra y esta confirmado via `kubectl get securitygrouppolicy
+  # -n patricia-app` (2026-07-11). Los pods de este chart ahora tienen ruta de red
+  # al Cluster #2 (BACKPLANE_REDIS_HOST). Cualquier pod que ya estuviera corriendo
+  # ANTES de este cambio necesita un rollout restart -- Fargate asigna los security
+  # groups del ENI solo en el momento de creacion del pod, no retroactivamente.
+  backplaneEnabled: "true"
   backplaneChannel: "patricia:backplane:location"
 
 externalSecrets:
