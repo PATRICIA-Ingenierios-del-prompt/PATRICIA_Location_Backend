@@ -31,6 +31,12 @@ public class LiveLocationRedisAdapter implements LiveLocationStoreOutPort {
     // Per-event index of users currently tracked, so we can fan-out snapshot/clear.
     private static final String EVENT_USERS_KEY_PREFIX = "loc:event-users:";
     private static final String ACTIVE_EVENTS_KEY = "loc:active-events";
+    // Per-event hash userId -> encrypted last position, with NO live TTL: closes the
+    // gap where a user goes silent > live TTL before a flush tick and their final
+    // position would otherwise never reach Postgres. Cleared on event end; the
+    // safety TTL below only guards against a lost event.ended message.
+    private static final String LAST_KNOWN_KEY_PREFIX = "loc:last-known:";
+    private static final Duration LAST_KNOWN_SAFETY_TTL = Duration.ofHours(24);
 
     private final StringRedisTemplate redis;
     private final EncryptionPort encryption;
@@ -53,6 +59,12 @@ public class LiveLocationRedisAdapter implements LiveLocationStoreOutPort {
         String users = eventUsersKey(location.eventId());
         redis.opsForSet().add(users, location.userId().toString());
         redis.expire(users, ttl);
+
+        // Last-known survives the live TTL so flush/incident can persist the final
+        // position of users who stopped updating before the next tick.
+        String lastKnown = lastKnownKey(location.eventId());
+        redis.opsForHash().put(lastKnown, location.userId().toString(), cipher);
+        redis.expire(lastKnown, LAST_KNOWN_SAFETY_TTL);
 
         redis.opsForSet().add(ACTIVE_EVENTS_KEY, location.eventId().toString());
     }
@@ -84,14 +96,41 @@ public class LiveLocationRedisAdapter implements LiveLocationStoreOutPort {
     }
 
     @Override
+    public List<LiveLocation> lastKnownSnapshot(UUID eventId) {
+        var entries = redis.opsForHash().entries(lastKnownKey(eventId));
+        if (entries.isEmpty()) {
+            return List.of();
+        }
+        List<LiveLocation> result = new ArrayList<>(entries.size());
+        entries.forEach((userIdStr, cipher) -> {
+            PositionValue pos = readValue(encryption.decrypt((String) cipher));
+            result.add(new LiveLocation(eventId, UUID.fromString((String) userIdStr), new GeoPoint(pos.getLat(), pos.getLng()), Instant.ofEpochMilli(pos.getTs())));
+        });
+        return result;
+    }
+
+    @Override
+    public Optional<LiveLocation> findLastKnown(UUID eventId, UUID userId) {
+        Object cipher = redis.opsForHash().get(lastKnownKey(eventId), userId.toString());
+        if (cipher == null) {
+            return Optional.empty();
+        }
+        PositionValue pos = readValue(encryption.decrypt((String) cipher));
+        return Optional.of(new LiveLocation(eventId, userId, new GeoPoint(pos.getLat(), pos.getLng()), Instant.ofEpochMilli(pos.getTs())));
+    }
+
+    @Override
     public Set<UUID> activeEventIds() {
         Set<String> ids = redis.opsForSet().members(ACTIVE_EVENTS_KEY);
         if (ids == null) {
             return Set.of();
         }
-        // Prune events whose users-index already expired so the set doesn't grow unbounded.
+        // An event stays active while EITHER index exists: the users-index expires
+        // with the live TTL, but last-known must keep the event flushable until
+        // event.ended clears it (or the safety TTL reaps a lost event).
         return ids.stream()
                 .filter(id -> Boolean.TRUE.equals(redis.hasKey(eventUsersKey(UUID.fromString(id))))
+                        || Boolean.TRUE.equals(redis.hasKey(lastKnownKey(UUID.fromString(id))))
                         || removeFromActive(id))
                 .map(UUID::fromString)
                 .collect(Collectors.toSet());
@@ -107,6 +146,7 @@ public class LiveLocationRedisAdapter implements LiveLocationStoreOutPort {
             }
         }
         redis.delete(eventUsersKey(eventId));
+        redis.delete(lastKnownKey(eventId));
         redis.delete(rosterKey(eventId));
         redis.opsForSet().remove(ACTIVE_EVENTS_KEY, eventId.toString());
     }
@@ -146,6 +186,10 @@ public class LiveLocationRedisAdapter implements LiveLocationStoreOutPort {
 
     private String eventUsersKey(UUID eventId) {
         return EVENT_USERS_KEY_PREFIX + eventId;
+    }
+
+    private String lastKnownKey(UUID eventId) {
+        return LAST_KNOWN_KEY_PREFIX + eventId;
     }
 
     @Data

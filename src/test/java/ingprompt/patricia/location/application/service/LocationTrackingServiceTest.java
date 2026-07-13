@@ -107,7 +107,7 @@ class LocationTrackingServiceTest {
     @Test
     void flushLiveToStorage_upsertsRoutineForEachActiveEvent() {
         when(liveStore.activeEventIds()).thenReturn(Set.of(eventId));
-        when(liveStore.snapshot(eventId)).thenReturn(List.of(live()));
+        when(liveStore.lastKnownSnapshot(eventId)).thenReturn(List.of(live()));
 
         service.flushLiveToStorage();
 
@@ -135,7 +135,7 @@ class LocationTrackingServiceTest {
 
     @Test
     void stopTracking_flushesAndClears() {
-        when(liveStore.snapshot(eventId)).thenReturn(List.of(live()));
+        when(liveStore.lastKnownSnapshot(eventId)).thenReturn(List.of(live()));
 
         service.stopTracking(eventId);
 
@@ -159,10 +159,25 @@ class LocationTrackingServiceTest {
     @Test
     void captureIncidentSnapshot_whenNoPosition_persistsNothing() {
         when(liveStore.findLive(eventId, userId)).thenReturn(Optional.empty());
+        when(liveStore.findLastKnown(eventId, userId)).thenReturn(Optional.empty());
 
         service.captureIncidentSnapshot(eventId, UUID.randomUUID(), userId);
 
         verify(storedRepository, never()).save(any());
+    }
+
+    @Test
+    void captureIncidentSnapshot_whenLiveExpired_fallsBackToLastKnown() {
+        UUID reportId = UUID.randomUUID();
+        when(liveStore.findLive(eventId, userId)).thenReturn(Optional.empty());
+        when(liveStore.findLastKnown(eventId, userId)).thenReturn(Optional.of(live()));
+
+        service.captureIncidentSnapshot(eventId, reportId, userId);
+
+        ArgumentCaptor<StoredLocation> captor = ArgumentCaptor.forClass(StoredLocation.class);
+        verify(storedRepository).save(captor.capture());
+        assertThat(captor.getValue().getReason()).isEqualTo(PersistenceReason.INCIDENT_REPORT);
+        assertThat(captor.getValue().getReportId()).isEqualTo(reportId);
     }
 
     // ---- LiveStreamSubscriptionCase ----
