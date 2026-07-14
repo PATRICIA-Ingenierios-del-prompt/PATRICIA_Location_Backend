@@ -91,9 +91,12 @@ public class LocationTrackingService implements TrackLocationCase, LocationMaint
 
     @Override
     public void captureIncidentSnapshot(UUID eventId, UUID reportId, UUID reporterId) {
-        Optional<LiveLocation> reporterLive = liveStore.findLive(eventId, reporterId);
+        // Prefer the live (fresh) position; fall back to last-known so a report
+        // filed more than liveTtl after the reporter's final update still leaves evidence.
+        Optional<LiveLocation> reporterLive = liveStore.findLive(eventId, reporterId)
+                .or(() -> liveStore.findLastKnown(eventId, reporterId));
         if (reporterLive.isEmpty()) {
-            log.warn("Incident {} on event {}: reporter {} has no live position — no evidence persisted",
+            log.warn("Incident {} on event {}: reporter {} has no live or last-known position — no evidence persisted",
                     reportId, eventId, reporterId);
             return;
         }
@@ -108,7 +111,10 @@ public class LocationTrackingService implements TrackLocationCase, LocationMaint
     }
 
     private void flushEvent(UUID eventId) {
-        for (LiveLocation live : liveStore.snapshot(eventId)) {
+        // Flush from the last-known index, not the live snapshot: live entries
+        // expire after liveTtl, so a user who went silent between ticks would
+        // otherwise never reach Postgres.
+        for (LiveLocation live : liveStore.lastKnownSnapshot(eventId)) {
             storedRepository.upsertRoutineLastKnown(StoredLocation.routineFlush(live, routineRetention));
         }
     }

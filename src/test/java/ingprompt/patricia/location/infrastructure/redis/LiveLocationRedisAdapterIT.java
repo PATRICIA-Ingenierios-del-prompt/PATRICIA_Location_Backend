@@ -95,6 +95,55 @@ class LiveLocationRedisAdapterIT {
     }
 
     @Test
+    void findLive_returnsEmptyWhenNotFound() {
+        assertThat(adapter.findLive(eventId, userId)).isEmpty();
+    }
+
+    @Test
+    void snapshot_returnsEmptyWhenNoTrackedUsers() {
+        assertThat(adapter.snapshot(eventId)).isEmpty();
+    }
+
+    @Test
+    void registerEvent_earlyReturnOnEmptyParticipants() {
+        adapter.registerEvent(eventId, Set.of());
+        assertThat(adapter.isRegistered(eventId, userId)).isFalse();
+    }
+
+    @Test
+    void lastKnownSnapshot_returnsEmptyWhenNone() {
+        assertThat(adapter.lastKnownSnapshot(eventId)).isEmpty();
+    }
+
+    @Test
+    void findLastKnown_returnsEmptyWhenNotFound() {
+        assertThat(adapter.findLastKnown(eventId, userId)).isEmpty();
+    }
+
+    @Test
+    void saveThenFindLastKnown_roundTripsPosition() {
+        adapter.save(live(4.65, -74.05), Duration.ofMinutes(5));
+
+        Optional<LiveLocation> found = adapter.findLastKnown(eventId, userId);
+
+        assertThat(found).isPresent();
+        assertThat(found.get().point().latitude()).isEqualTo(4.65);
+        assertThat(found.get().point().longitude()).isEqualTo(-74.05);
+    }
+
+    @Test
+    void lastKnownSnapshot_returnsAllTrackedUsers() {
+        adapter.save(live(4.65, -74.05), Duration.ofMinutes(5));
+
+        assertThat(adapter.lastKnownSnapshot(eventId)).hasSize(1);
+    }
+
+    @Test
+    void activeEventIds_returnsEmptyWhenNone() {
+        assertThat(adapter.activeEventIds()).isEmpty();
+    }
+
+    @Test
     void clearEvent_removesLiveData() {
         adapter.save(live(4.65, -74.05), Duration.ofMinutes(5));
 
@@ -102,5 +151,7 @@ class LiveLocationRedisAdapterIT {
 
         assertThat(adapter.findLive(eventId, userId)).isEmpty();
         assertThat(adapter.snapshot(eventId)).isEmpty();
+        assertThat(adapter.findLastKnown(eventId, userId)).isEmpty();
+        assertThat(adapter.lastKnownSnapshot(eventId)).isEmpty();
     }
 }
