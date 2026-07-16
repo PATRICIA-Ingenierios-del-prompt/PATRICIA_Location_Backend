@@ -25,11 +25,12 @@ image:
 replicaCount: 2
 
 serviceAccount:
-  # Reutiliza el rol IRSA pre-provisionado (module.eks.service_irsa["location"]).
-  # Igual que en Parches, sin policy de permisos todavia (Location no llama APIs
-  # de AWS via IRSA hoy - RDS/Redis/MQ se alcanzan por Security Group, no IAM).
-  # Dejar vacio hasta que se necesite una llamada real a un API de AWS via IRSA.
-  roleArn: ""
+  # Rol IRSA pre-provisionado (module.eks.service_irsa["location"]). Sin policy
+  # de permisos todavia (Location no llama APIs de AWS via IRSA hoy - RDS/Redis/MQ
+  # se alcanzan por Security Group, no IAM), pero se anota igual por convencion
+  # de infra. Verificar el nombre exacto con:
+  #   terraform output -json service_irsa_role_arns | jq -r .location
+  roleArn: "arn:aws:iam::188701360691:role/patricia-dev-location-irsa"
 
 config:
   # No sensible.
@@ -53,11 +54,9 @@ externalSecrets:
   # Lo que ya esta provisionado en AWS Secrets Manager (confirmado leyendo
   # modules/secrets/main.tf del repo de infra):
   #   patricia-dev/amazon-mq          -> EXISTS. SPRING_RABBITMQ_ADDRESSES/USERNAME/PASSWORD
-  #                                       (URI amqps://...:5671, NO host+port separados -
-  #                                       ver nota de application.properties en el README
-  #                                       de este PR: Location debe pasar a
-  #                                       spring.rabbitmq.addresses, igual que Parches,
-  #                                       en vez de RABBITMQ_HOST/PORT actuales).
+  #                                       (URI amqps://...:5671, NO host+port separados).
+  #                                       application.properties ya usa spring.rabbitmq.addresses,
+  #                                       igual que Parches/Auth/Users.
   #   patricia-dev/cache-redis        -> EXISTS. REDIS_HOST/REDIS_PORT/REDIS_PASSWORD -
   #                                       coincide EXACTO con lo que ya lee
   #                                       application.properties (spring.data.redis.*),
